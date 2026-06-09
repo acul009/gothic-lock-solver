@@ -3,7 +3,7 @@ use iced::{
     Color, Element,
     Length::Fill,
     Task,
-    widget::{button, column, container, pick_list, row, scrollable, slider, space, table, text},
+    widget::{button, column, container, row, scrollable, slider, space, table, text},
 };
 
 use crate::lock::{Link, Move, Solution};

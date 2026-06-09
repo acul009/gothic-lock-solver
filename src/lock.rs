@@ -30,6 +30,8 @@ impl Lock {
 pub const SLICE_POSITIONS: u8 = 7;
 pub const SLICE_MIDDLE: u8 = SLICE_POSITIONS / 2;
 
+const MOVE_LIMIT: usize = 100;
+
 #[derive(Clone)]
 pub struct Slice {
     pub start: u8,
@@ -222,6 +224,7 @@ pub struct Solver {
 pub enum SolveError {
     NonTrivial,
     CascadingSliceStuck,
+    ToManyMoves,
 }
 
 impl Display for SolveError {
@@ -229,6 +232,7 @@ impl Display for SolveError {
         match self {
             SolveError::NonTrivial => write!(f, "Non-trivial lock"),
             SolveError::CascadingSliceStuck => write!(f, "Cascading slice stuck"),
+            SolveError::ToManyMoves => write!(f, "To many moves, probably unsolvable"),
         }
     }
 }
@@ -311,6 +315,10 @@ impl Solver {
         println!("Moving slice {} {} recursively ", slice, direction);
         if !self.check_clearance(slice, direction) {
             return Err(SolveError::CascadingSliceStuck);
+        }
+
+        if moves.len() > MOVE_LIMIT {
+            return Err(SolveError::ToManyMoves);
         }
 
         for (linked, link) in self.lock.links.links_from(slice) {
