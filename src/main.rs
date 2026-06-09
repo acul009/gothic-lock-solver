@@ -1,12 +1,12 @@
 #![windows_subsystem = "windows"]
 use iced::{
-    Element,
+    Color, Element,
     Length::Fill,
     Task,
-    widget::{button, column, container, pick_list, row, scrollable, slider, table, text},
+    widget::{button, column, container, pick_list, row, scrollable, slider, space, table, text},
 };
 
-use crate::lock::{Link, Solution};
+use crate::lock::{Link, Move, Solution};
 
 pub mod lock;
 
@@ -96,9 +96,9 @@ impl State {
                                         column![
                                             text!("Slice {}", index + 1),
                                             row![
-                                                text!("Start: {}", slice).width(100),
+                                                text!("Start: {}", slice + 1).width(100),
                                                 slider(
-                                                    1..=lock::SLICE_POSITIONS,
+                                                    0..=lock::SLICE_POSITIONS - 1,
                                                     *slice,
                                                     move |start| {
                                                         Message::SetStart(index, start)
@@ -128,13 +128,17 @@ impl State {
                                             if index == 0 {
                                                 Element::from(text!("{}", row.0 + 1))
                                             } else {
-                                                Element::from(
-                                                    button(text!("{}", &row.1[index - 1]))
-                                                        .on_press(Message::CycleLink(
-                                                            row.0,
-                                                            index - 1,
-                                                        )),
-                                                )
+                                                if row.0 == index - 1 {
+                                                    return Element::from(space());
+                                                } else {
+                                                    Element::from(
+                                                        button(text!("{}", &row.1[index - 1]))
+                                                            .on_press(Message::CycleLink(
+                                                                row.0,
+                                                                index - 1,
+                                                            )),
+                                                    )
+                                                }
                                             }
                                         },
                                     )
@@ -144,7 +148,7 @@ impl State {
                                         .links
                                         .links_from(index)
                                         .iter()
-                                        .map(|link| {
+                                        .map(|(_, link)| {
                                             match link {
                                                 Link::None => "N",
                                                 Link::Same => "S",
@@ -174,7 +178,34 @@ impl State {
                                 .solve_order
                                 .iter()
                                 .map(|index| { text!("{}", index + 1).size(20).into() }))
-                            .spacing(5)
+                            .spacing(5),
+                            if solution.graph.trivial {
+                                "Solution is trivial"
+                            } else {
+                                "Solution is non-trivial"
+                            },
+                            match &solution.moves {
+                                Ok(moves) => {
+                                    Element::from(table(
+                                        [
+                                            table::column("Slice", |(m, _): &(Move, usize)| {
+                                                text!("{}", m.slice + 1)
+                                            }),
+                                            table::column("Direction", |(m, _): &(Move, usize)| {
+                                                text!("{}", m.direction)
+                                            }),
+                                            table::column(
+                                                "Amount",
+                                                |(_, count): &(Move, usize)| text!("{}", count),
+                                            ),
+                                        ],
+                                        moves.iter(),
+                                    ))
+                                }
+                                Err(e) => text!("Error: {}", e)
+                                    .color(Color::from_rgb(1.0, 0.0, 0.0))
+                                    .into(),
+                            }
                         ]
                         .spacing(10),
                     )
