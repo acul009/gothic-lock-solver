@@ -1,11 +1,12 @@
+#![windows_subsystem = "windows"]
 use iced::{
     Element,
     Length::Fill,
     Task,
-    widget::{button, column, container, pick_list, row, scrollable, slider, text},
+    widget::{button, column, container, pick_list, row, scrollable, slider, table, text},
 };
 
-use crate::lock::{Direction, Solution};
+use crate::lock::{Link, Solution};
 
 pub mod lock;
 
@@ -24,9 +25,7 @@ pub enum Message {
     LockSizeChanged(u8),
     CreateLock,
     SetStart(usize, u8),
-    SetTarget(usize, u8),
-    SetLink(usize, usize, Direction),
-    RemoveLink(usize, usize),
+    CycleLink(usize, usize),
     Solve,
 }
 
@@ -52,25 +51,13 @@ impl State {
             }
             Message::SetStart(index, start) => {
                 if let Some(lock) = &mut self.lock {
-                    lock.slices[index].start = start;
+                    lock.slices[index] = start;
                 }
                 Task::none()
             }
-            Message::SetTarget(index, target) => {
+            Message::CycleLink(index, linked) => {
                 if let Some(lock) = &mut self.lock {
-                    lock.slices[index].target = target;
-                }
-                Task::none()
-            }
-            Message::SetLink(index, linked, direction) => {
-                if let Some(lock) = &mut self.lock {
-                    lock.slices[index].linked.insert(linked, direction);
-                }
-                Task::none()
-            }
-            Message::RemoveLink(index, linked) => {
-                if let Some(lock) = &mut self.lock {
-                    lock.slices[index].linked.remove(&linked);
+                    lock.links.cycle_link(index, linked);
                 }
                 Task::none()
             }
@@ -102,81 +89,79 @@ impl State {
                 .style(container::bordered_box),
                 if let Some(lock) = &self.lock {
                     Some(
-                        container(
-                            column(lock.slices.iter().enumerate().map(|(index, slice)| {
-                                container(
-                                    column![
-                                        text!("Slice {}", index + 1),
-                                        row![
-                                            text!("Start: {}", slice.start).width(100),
-                                            slider(
-                                                1..=lock::SLICE_POSITIONS,
-                                                slice.start,
-                                                move |start| { Message::SetStart(index, start) }
-                                            ),
-                                        ],
-                                        row![
-                                            text!("Target: {}", slice.target).width(100),
-                                            slider(
-                                                1..=lock::SLICE_POSITIONS,
-                                                slice.target,
-                                                move |target| { Message::SetTarget(index, target) }
-                                            ),
-                                        ],
-                                        "Linked:",
-                                        column(slice.linked.iter().map(|(linked, direction)| {
+                        column![
+                            container(
+                                column(lock.slices.iter().enumerate().map(|(index, slice)| {
+                                    container(
+                                        column![
+                                            text!("Slice {}", index + 1),
                                             row![
-                                                text!("{}", linked + 1),
-                                                pick_list(
-                                                    [Direction::Same, Direction::Opposite],
-                                                    Some(direction),
-                                                    move |direction| Message::SetLink(
-                                                        index, *linked, direction
-                                                    )
+                                                text!("Start: {}", slice).width(100),
+                                                slider(
+                                                    1..=lock::SLICE_POSITIONS,
+                                                    *slice,
+                                                    move |start| {
+                                                        Message::SetStart(index, start)
+                                                    }
                                                 ),
-                                                button("X")
-                                                    .on_press(Message::RemoveLink(index, *linked))
-                                            ]
-                                            .spacing(10)
-                                            .into()
-                                        }))
-                                        .spacing(10),
-                                        row![
-                                            "Add Link:",
-                                            pick_list(
-                                                (1..=lock.size())
-                                                    .into_iter()
-                                                    .filter(|new_link| !slice
-                                                        .linked
-                                                        .contains_key(&(new_link - 1))
-                                                        && *new_link - 1 != index)
-                                                    .collect::<Vec<_>>(),
-                                                None::<usize>,
-                                                move |new_link| Message::SetLink(
-                                                    index,
-                                                    new_link - 1,
-                                                    Direction::Same
-                                                )
-                                            )
+                                            ],
                                         ]
                                         .spacing(10),
-                                    ]
-                                    .spacing(10),
-                                )
-                                .padding(10)
-                                .style(container::bordered_box)
-                                .into()
-                            }))
-                            .spacing(10),
-                        )
-                        .padding(20)
-                        .style(container::bordered_box),
+                                    )
+                                    .padding(10)
+                                    .style(container::bordered_box)
+                                    .into()
+                                }))
+                                .spacing(10),
+                            )
+                            .padding(20)
+                            .style(container::bordered_box),
+                            container(table(
+                                (0..=lock.size()).into_iter().map(|index| {
+                                    table::column(
+                                        if index == 0 {
+                                            text("")
+                                        } else {
+                                            text!("{}", index)
+                                        },
+                                        move |row: (usize, Vec<String>)| {
+                                            if index == 0 {
+                                                Element::from(text!("{}", row.0 + 1))
+                                            } else {
+                                                Element::from(
+                                                    button(text!("{}", &row.1[index - 1]))
+                                                        .on_press(Message::CycleLink(
+                                                            row.0,
+                                                            index - 1,
+                                                        )),
+                                                )
+                                            }
+                                        },
+                                    )
+                                }),
+                                (0..lock.size()).map(|index| {
+                                    let cols = lock
+                                        .links
+                                        .links_from(index)
+                                        .iter()
+                                        .map(|link| {
+                                            match link {
+                                                Link::None => "N",
+                                                Link::Same => "S",
+                                                Link::Opposite => "O",
+                                            }
+                                            .to_string()
+                                        })
+                                        .collect();
+                                    (index, cols)
+                                })
+                            ))
+                            .padding(20)
+                            .style(container::bordered_box),
+                            Some(button("Solve").on_press(Message::Solve)),
+                        ]
+                        .spacing(20),
                     )
-                } else {
-                    None
-                },
-                if self.lock.is_some() {
-                    Some(button("Solve").on_press(Message::Solve))
                 } else {
                     None
                 },

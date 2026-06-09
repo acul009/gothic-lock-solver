@@ -5,13 +5,15 @@ use std::{
 
 #[derive(Clone)]
 pub struct Lock {
-    pub slices: Vec<Slice>,
+    pub slices: Vec<u8>,
+    pub links: Links,
 }
 
 impl Lock {
     pub fn new(slice_count: usize) -> Lock {
         Lock {
-            slices: vec![Slice::new(); slice_count],
+            slices: vec![0u8; slice_count],
+            links: Links::new(slice_count),
         }
     }
 
@@ -31,31 +33,58 @@ pub const SLICE_POSITIONS: u8 = 7;
 #[derive(Clone)]
 pub struct Slice {
     pub start: u8,
-    pub target: u8,
-    pub linked: BTreeMap<usize, Direction>,
 }
 
 impl Slice {
     pub fn new() -> Slice {
-        Slice {
-            start: 1,
-            target: 1,
-            linked: BTreeMap::new(),
+        Slice { start: 1 }
+    }
+}
+
+#[derive(Clone)]
+pub struct Links {
+    size: usize,
+    links: Vec<Link>,
+}
+impl Links {
+    fn new(slice_count: usize) -> Self {
+        Self {
+            size: slice_count,
+            links: vec![Link::None; slice_count * slice_count],
         }
+    }
+
+    pub fn links_from(&self, index: usize) -> Vec<&Link> {
+        let start = index * self.size;
+        self.links[start..start + self.size].iter().collect()
+    }
+
+    pub fn links_to(&self, index: usize) -> Vec<&Link> {
+        let mut links = Vec::with_capacity(self.size);
+        for i in 0..self.size {
+            links.push(&self.links[i * self.size + index]);
+        }
+        links
+    }
+
+    pub fn cycle_link(&mut self, from: usize, to: usize) {
+        self.links[from * self.size + to].cycle();
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
+pub enum Link {
+    None,
     Same,
     Opposite,
 }
 
-impl Display for Direction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Link {
+    fn cycle(&mut self) {
         match self {
-            Direction::Same => write!(f, "Same direction"),
-            Direction::Opposite => write!(f, "Opposite direction"),
+            Self::None => *self = Self::Same,
+            Self::Same => *self = Self::Opposite,
+            Self::Opposite => *self = Self::None,
         }
     }
 }
@@ -72,15 +101,36 @@ impl DependencyGraph {
         let mut affects = BTreeMap::<usize, BTreeSet<usize>>::new();
 
         for index in 0..lock.size() {
-            affected_by.insert(index, BTreeSet::new());
-            affects.insert(index, BTreeSet::new());
-        }
-
-        for (index, slice) in lock.slices.iter().enumerate() {
-            for linked_index in slice.linked.keys() {
-                affected_by.entry(*linked_index).or_default().insert(index);
-                affects.entry(index).or_default().insert(*linked_index);
-            }
+            affected_by.insert(
+                index,
+                lock.links
+                    .links_to(index)
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(linked, link)| {
+                        if let Link::None = link {
+                            None
+                        } else {
+                            Some(linked)
+                        }
+                    })
+                    .collect(),
+            );
+            affects.insert(
+                index,
+                lock.links
+                    .links_from(index)
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(linked, link)| {
+                        if let Link::None = link {
+                            None
+                        } else {
+                            Some(linked)
+                        }
+                    })
+                    .collect(),
+            );
         }
 
         let mut solve_order = Vec::new();
