@@ -3,6 +3,8 @@ use std::{
     fmt::Display,
 };
 
+mod brute_force;
+
 #[derive(Clone)]
 pub struct Lock {
     pub slices: Vec<u8>,
@@ -23,7 +25,7 @@ impl Lock {
 
     pub fn solve(&self) -> Solution {
         let graph = DependencyGraph::from_lock(self);
-        Solver::new(graph, self.clone()).solve()
+        brute_force::Solver::new(graph, self.clone()).solve()
     }
 }
 
@@ -71,6 +73,10 @@ impl Links {
             links.push(self.links[i * self.size + index]);
         }
         links.into_iter().enumerate().collect()
+    }
+
+    pub fn link(&self, from: usize, to: usize) -> Link {
+        self.links[from * self.size + to]
     }
 
     pub fn cycle_link(&mut self, from: usize, to: usize) {
@@ -225,6 +231,7 @@ pub enum SolveError {
     NonTrivial,
     CascadingSliceStuck,
     ToManyMoves,
+    Impossible,
 }
 
 impl Display for SolveError {
@@ -233,6 +240,7 @@ impl Display for SolveError {
             SolveError::NonTrivial => write!(f, "Non-trivial lock"),
             SolveError::CascadingSliceStuck => write!(f, "Cascading slice stuck"),
             SolveError::ToManyMoves => write!(f, "To many moves, probably unsolvable"),
+            SolveError::Impossible => write!(f, "Impossible to solve"),
         }
     }
 }
@@ -250,17 +258,14 @@ impl Solver {
             };
         }
 
-        let mut moves = Vec::new();
+        let mut moves = Vec::with_capacity(MOVE_LIMIT * self.lock.size());
 
         for slice in self.graph.solve_order.clone() {
-            match self.solve_slice(slice) {
-                Ok(slice_moves) => moves.extend(slice_moves),
-                Err(e) => {
-                    return Solution {
-                        graph: self.graph,
-                        moves: Err(e),
-                    };
-                }
+            if let Err(e) = self.solve_slice(slice, &mut moves) {
+                return Solution {
+                    graph: self.graph,
+                    moves: Err(e),
+                };
             }
         }
 
@@ -281,29 +286,26 @@ impl Solver {
         }
     }
 
-    fn solve_slice(&mut self, slice: usize) -> Result<Vec<Move>, SolveError> {
+    fn solve_slice(&mut self, slice: usize, moves: &mut Vec<Move>) -> Result<(), SolveError> {
         println!("Solving slice {}", slice);
-        let mut slice_moves = Vec::new();
 
         while self.lock.slices[slice] != SLICE_MIDDLE {
             println!(
                 "Slice {} is at {}, but should be at {}",
                 slice, self.lock.slices[slice], SLICE_MIDDLE
             );
-            let mut step_moves = Vec::new();
             if self.lock.slices[slice] > SLICE_MIDDLE {
                 println!("Moving slice {} left to solve it", slice);
-                self.move_slice(slice, Direction::Left, &mut step_moves)?;
+                self.move_slice(slice, Direction::Left, moves)?;
             } else {
                 println!("Moving slice {} right to solve it", slice);
-                self.move_slice(slice, Direction::Right, &mut step_moves)?;
+                self.move_slice(slice, Direction::Right, moves)?;
             }
-            slice_moves.extend(step_moves);
         }
 
         println!("Slice {} solved", slice);
 
-        Ok(slice_moves)
+        Ok(())
     }
 
     fn move_slice(

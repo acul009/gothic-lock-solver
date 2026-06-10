@@ -78,7 +78,7 @@ impl State {
                         "Lock size",
                         row![
                             text!("{}", self.new_lock_size),
-                            slider(4..=10, self.new_lock_size, Message::LockSizeChanged)
+                            slider(4..=7, self.new_lock_size, Message::LockSizeChanged)
                         ]
                         .spacing(5),
                         button("Create Lock").on_press(Message::CreateLock)
