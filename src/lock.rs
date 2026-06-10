@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-};
+use std::fmt::Display;
 
 mod brute_force;
 
@@ -24,15 +21,12 @@ impl Lock {
     }
 
     pub fn solve(&self) -> Solution {
-        let graph = DependencyGraph::from_lock(self);
-        brute_force::Solver::new(graph, self.clone()).solve()
+        brute_force::Solver::new(self.clone()).solve()
     }
 }
 
 pub const SLICE_POSITIONS: u8 = 7;
 pub const SLICE_MIDDLE: u8 = SLICE_POSITIONS / 2;
-
-const MOVE_LIMIT: usize = 100;
 
 #[derive(Clone)]
 pub struct Slice {
@@ -109,86 +103,7 @@ impl Link {
     }
 }
 
-pub struct DependencyGraph {
-    pub solve_order: Vec<usize>,
-    pub trivial: bool,
-}
-
-impl DependencyGraph {
-    fn from_lock(lock: &Lock) -> DependencyGraph {
-        let mut affected_by = BTreeMap::<usize, BTreeSet<usize>>::new();
-        let mut affects = BTreeMap::<usize, BTreeSet<usize>>::new();
-
-        for index in 0..lock.size() {
-            affected_by.insert(
-                index,
-                lock.links
-                    .links_to(index)
-                    .into_iter()
-                    .filter_map(|(linked, link)| {
-                        if let Link::None = link {
-                            None
-                        } else {
-                            Some(linked)
-                        }
-                    })
-                    .collect(),
-            );
-            affects.insert(
-                index,
-                lock.links
-                    .links_from(index)
-                    .into_iter()
-                    .filter_map(|(linked, link)| {
-                        if let Link::None = link {
-                            None
-                        } else {
-                            Some(linked)
-                        }
-                    })
-                    .collect(),
-            );
-        }
-
-        let mut solve_order = Vec::new();
-        let mut affected = affected_by.clone();
-
-        for (index, deps) in affected_by.iter() {
-            println!("{} affected by {:?}", index, deps);
-        }
-
-        let mut trivial = true;
-
-        while !affected.is_empty() {
-            let next = {
-                let mut next = affected.iter().next().unwrap().clone();
-                for possibility in affected.iter() {
-                    if possibility.1.len() < next.1.len() {
-                        next = possibility.clone();
-                    }
-                }
-                if next.1.len() > 0 {
-                    trivial = false;
-                }
-                next.0.clone()
-            };
-
-            solve_order.push(next);
-            affected.remove(&next);
-            for deps in affected.iter_mut() {
-                deps.1.remove(&next);
-            }
-        }
-
-        DependencyGraph {
-            solve_order,
-            trivial,
-        }
-    }
-}
-
 pub struct Solution {
-    pub graph: DependencyGraph,
     pub moves: Result<Vec<(Move, usize)>, SolveError>,
 }
 
@@ -222,11 +137,6 @@ pub struct Move {
     pub direction: Direction,
 }
 
-pub struct Solver {
-    graph: DependencyGraph,
-    lock: Lock,
-}
-
 pub enum SolveError {
     NonTrivial,
     CascadingSliceStuck,
@@ -241,127 +151,6 @@ impl Display for SolveError {
             SolveError::CascadingSliceStuck => write!(f, "Cascading slice stuck"),
             SolveError::ToManyMoves => write!(f, "To many moves, probably unsolvable"),
             SolveError::Impossible => write!(f, "Impossible to solve"),
-        }
-    }
-}
-
-impl Solver {
-    fn new(graph: DependencyGraph, lock: Lock) -> Self {
-        Solver { graph, lock }
-    }
-
-    fn solve(mut self) -> Solution {
-        if !self.graph.trivial {
-            return Solution {
-                graph: self.graph,
-                moves: Err(SolveError::NonTrivial),
-            };
-        }
-
-        let mut moves = Vec::with_capacity(MOVE_LIMIT * self.lock.size());
-
-        for slice in self.graph.solve_order.clone() {
-            if let Err(e) = self.solve_slice(slice, &mut moves) {
-                return Solution {
-                    graph: self.graph,
-                    moves: Err(e),
-                };
-            }
-        }
-
-        let mut compacted = Vec::<(Move, usize)>::new();
-        for m in moves {
-            if let Some(last) = compacted.last_mut() {
-                if last.0 == m {
-                    last.1 += 1;
-                    continue;
-                }
-            }
-            compacted.push((m, 1));
-        }
-
-        Solution {
-            graph: self.graph,
-            moves: Ok(compacted),
-        }
-    }
-
-    fn solve_slice(&mut self, slice: usize, moves: &mut Vec<Move>) -> Result<(), SolveError> {
-        println!("Solving slice {}", slice);
-
-        while self.lock.slices[slice] != SLICE_MIDDLE {
-            println!(
-                "Slice {} is at {}, but should be at {}",
-                slice, self.lock.slices[slice], SLICE_MIDDLE
-            );
-            if self.lock.slices[slice] > SLICE_MIDDLE {
-                println!("Moving slice {} left to solve it", slice);
-                self.move_slice(slice, Direction::Left, moves)?;
-            } else {
-                println!("Moving slice {} right to solve it", slice);
-                self.move_slice(slice, Direction::Right, moves)?;
-            }
-        }
-
-        println!("Slice {} solved", slice);
-
-        Ok(())
-    }
-
-    fn move_slice(
-        &mut self,
-        slice: usize,
-        direction: Direction,
-        moves: &mut Vec<Move>,
-    ) -> Result<(), SolveError> {
-        println!("Moving slice {} {} recursively ", slice, direction);
-        if !self.check_clearance(slice, direction) {
-            return Err(SolveError::CascadingSliceStuck);
-        }
-
-        if moves.len() > MOVE_LIMIT {
-            return Err(SolveError::ToManyMoves);
-        }
-
-        for (linked, link) in self.lock.links.links_from(slice) {
-            if let Some(linked_direction) = link.apply(direction) {
-                if linked == slice {
-                    panic!("Slice linked to itself");
-                }
-                // try cascading slices. If the linked slice has no clearance, we'll try to move it the opposite way first.
-                if !self.check_clearance(linked, linked_direction) {
-                    println!("No clearance for linked slice, trying to compensate");
-                    self.move_slice(linked, linked_direction.opposite(), moves)?;
-                }
-
-                match linked_direction {
-                    Direction::Left => {
-                        self.lock.slices[linked] -= 1;
-                    }
-                    Direction::Right => {
-                        self.lock.slices[linked] += 1;
-                    }
-                }
-            }
-        }
-        moves.push(Move { slice, direction });
-        match direction {
-            Direction::Left => {
-                self.lock.slices[slice] -= 1;
-            }
-            Direction::Right => {
-                self.lock.slices[slice] += 1;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn check_clearance(&self, slice: usize, direction: Direction) -> bool {
-        let slice = self.lock.slices[slice];
-        match direction {
-            Direction::Left => slice > 0,
-            Direction::Right => slice + 1 < SLICE_POSITIONS,
         }
     }
 }

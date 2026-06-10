@@ -1,8 +1,7 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::lock::{
-    DependencyGraph, Direction, Links, Lock, Move, SLICE_MIDDLE, SLICE_POSITIONS, Solution,
-    SolveError,
+    Direction, Links, Lock, Move, SLICE_MIDDLE, SLICE_POSITIONS, Solution, SolveError,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -86,13 +85,12 @@ pub struct Step {
 }
 
 pub struct Solver {
-    graph: DependencyGraph,
     lock: Lock,
 }
 
 impl Solver {
-    pub(super) fn new(graph: DependencyGraph, lock: Lock) -> Self {
-        Solver { graph, lock }
+    pub(super) fn new(lock: Lock) -> Self {
+        Solver { lock }
     }
 
     pub(super) fn solve(self) -> Solution {
@@ -107,7 +105,6 @@ impl Solver {
 
         if initial_state.to_number() == solved {
             return Solution {
-                graph: self.graph,
                 moves: Ok(Vec::new()),
             };
         }
@@ -149,8 +146,6 @@ impl Solver {
                     }
                     combinations_found += 1;
 
-                    println!("previous of {} is {}", new_state_num, old_state_num);
-
                     state_map[new_state_num] = Some(Step {
                         previous: old_state_num,
                         m: m.clone(),
@@ -162,10 +157,6 @@ impl Solver {
                     }
 
                     queue.push_back(new_state);
-                    if combinations_found % 100 == 0 {
-                        println!("Queue length: {}", queue.len());
-                        println!("Combinations found: {}", combinations_found);
-                    }
                 }
             }
         }
@@ -177,7 +168,6 @@ impl Solver {
         if state_map[solved].is_none() {
             println!("No path found!");
             return Solution {
-                graph: self.graph,
                 moves: Err(SolveError::Impossible),
             };
         }
@@ -186,10 +176,10 @@ impl Solver {
         let mut state = solved;
         while let Some(step) = &state_map[state] {
             // println!("previous of {} is {}", state, step.previous);
-            moves.push(step.m);
             if state == step.previous {
                 break;
             }
+            moves.push(step.m);
             state = step.previous;
         }
         moves.reverse();
@@ -208,7 +198,6 @@ impl Solver {
         }
 
         Solution {
-            graph: self.graph,
             moves: Ok(compacted),
         }
     }

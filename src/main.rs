@@ -171,42 +171,27 @@ impl State {
                 },
                 if let Some(solution) = &self.solution {
                     Some(
-                        column![
-                            "Solve Order:",
-                            row(solution
-                                .graph
-                                .solve_order
-                                .iter()
-                                .map(|index| { text!("{}", index + 1).size(20).into() }))
-                            .spacing(5),
-                            if solution.graph.trivial {
-                                "Solution is trivial"
-                            } else {
-                                "Solution is non-trivial"
-                            },
-                            match &solution.moves {
-                                Ok(moves) => {
-                                    Element::from(table(
-                                        [
-                                            table::column("Slice", |(m, _): &(Move, usize)| {
-                                                text!("{}", m.slice + 1)
-                                            }),
-                                            table::column("Direction", |(m, _): &(Move, usize)| {
-                                                text!("{}", m.direction)
-                                            }),
-                                            table::column(
-                                                "Amount",
-                                                |(_, count): &(Move, usize)| text!("{}", count),
-                                            ),
-                                        ],
-                                        moves.iter(),
-                                    ))
-                                }
-                                Err(e) => text!("Error: {}", e)
-                                    .color(Color::from_rgb(1.0, 0.0, 0.0))
-                                    .into(),
+                        column![match &solution.moves {
+                            Ok(moves) => {
+                                Element::from(table(
+                                    [
+                                        table::column("Slice", |(m, _): &(Move, usize)| {
+                                            text!("{}", m.slice + 1)
+                                        }),
+                                        table::column("Direction", |(m, _): &(Move, usize)| {
+                                            text!("{}", m.direction)
+                                        }),
+                                        table::column("Amount", |(_, count): &(Move, usize)| {
+                                            text!("{}", count)
+                                        }),
+                                    ],
+                                    moves.iter(),
+                                ))
                             }
-                        ]
+                            Err(e) => text!("Error: {}", e)
+                                .color(Color::from_rgb(1.0, 0.0, 0.0))
+                                .into(),
+                        }]
                         .spacing(10),
                     )
                 } else {
