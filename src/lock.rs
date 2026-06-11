@@ -76,6 +76,10 @@ impl Links {
     pub fn cycle_link(&mut self, from: usize, to: usize) {
         self.links[from * self.size + to].cycle();
     }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
