@@ -6,75 +6,84 @@ use crate::lock::{
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct LockState {
-    slices: Vec<u8>,
+    num: usize,
+    slices: usize,
 }
 
 impl LockState {
     fn new(lock: &Lock) -> Self {
-        LockState {
-            slices: lock.slices.clone(),
-        }
-    }
-
-    fn to_number(&self) -> usize {
         let mut mult = 1;
         let mut num = 0;
-        for slice in &self.slices {
+        for slice in &lock.slices {
             num += (*slice as usize) * mult;
             mult *= SLICE_POSITIONS as usize;
         }
-        num
+
+        LockState {
+            num,
+            slices: lock.size(),
+        }
+    }
+
+    fn solved(slices: usize) -> Self {
+        let mut mult: usize = 1;
+        let mut num: usize = 0;
+        for _ in 0..slices {
+            num += SLICE_MIDDLE as usize * mult;
+            mult *= SLICE_POSITIONS as usize;
+        }
+        LockState { num, slices }
+    }
+
+    fn to_number(&self) -> usize {
+        self.num
     }
 
     fn possible_states(&self) -> usize {
-        (SLICE_POSITIONS as usize).pow(self.slices.len() as u32)
-    }
-
-    fn check_clearance(&self, slice: usize, direction: Direction) -> bool {
-        let slice = self.slices[slice];
-        match direction {
-            Direction::Left => slice > 0,
-            Direction::Right => slice + 1 < SLICE_POSITIONS,
-        }
+        (SLICE_POSITIONS as usize).pow(self.slices as u32)
     }
 
     fn apply_move(&self, m: &Move, links: &Links) -> Option<LockState> {
         let mut new = self.clone();
-        if !new.check_clearance(m.slice, m.direction) {
+
+        if new.move_without_linked(m).is_err() {
             return None;
         }
 
-        match m.direction {
-            Direction::Left => {
-                new.slices[m.slice] -= 1;
-            }
-            Direction::Right => {
-                new.slices[m.slice] += 1;
-            }
-        }
-
-        for linked in 0..self.slices.len() {
+        for linked in 0..self.slices {
             if let Some(linked_direction) = links.link(m.slice, linked).apply(m.direction) {
-                if linked == m.slice {
-                    panic!("Slice linked to itself");
-                }
-                // try cascading slices. If the linked slice has no clearance, we'll try to move it the opposite way first.
-                if !self.check_clearance(linked, linked_direction) {
+                let linked_move = Move {
+                    direction: linked_direction,
+                    slice: linked,
+                };
+                if new.move_without_linked(&linked_move).is_err() {
                     return None;
-                }
-
-                match linked_direction {
-                    Direction::Left => {
-                        new.slices[linked] -= 1;
-                    }
-                    Direction::Right => {
-                        new.slices[linked] += 1;
-                    }
                 }
             }
         }
 
         Some(new)
+    }
+
+    fn move_without_linked(&mut self, m: &Move) -> Result<(), ()> {
+        let remainder = self.num % (SLICE_POSITIONS as usize).pow(m.slice as u32 + 1);
+        let divider = (SLICE_POSITIONS as usize).pow(m.slice as u32);
+        let slice = remainder / divider;
+        match m.direction {
+            Direction::Left => {
+                if slice == 0 {
+                    return Err(());
+                }
+                self.num -= divider;
+            }
+            Direction::Right => {
+                if slice >= super::SLICE_POSITIONS as usize - 1 {
+                    return Err(());
+                }
+                self.num += divider;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -94,14 +103,10 @@ impl Solver {
     }
 
     pub(super) fn solve(self) -> Solution {
+        let start = std::time::Instant::now();
         let initial_state = LockState::new(&self.lock);
-        println!("initial state: {}", initial_state.to_number());
 
-        let solved = LockState {
-            slices: vec![SLICE_MIDDLE; self.lock.size()],
-        }
-        .to_number();
-        println!("Solved state: {}", solved);
+        let solved = LockState::solved(self.lock.size()).to_number();
 
         if initial_state.to_number() == solved {
             return Solution {
@@ -152,7 +157,6 @@ impl Solver {
                     });
 
                     if new_state_num == solved {
-                        println!("Found path to solution!");
                         break 'outer;
                     }
 
@@ -161,9 +165,12 @@ impl Solver {
             }
         }
 
-        println!("Done! Checked {} combinations.", combinations_found);
-
-        println!("Looking for path to solution...");
+        let time = std::time::Instant::now().duration_since(start);
+        println!(
+            "Done! Checked {} combinations in {}ms.",
+            combinations_found,
+            time.as_millis()
+        );
 
         if state_map[solved].is_none() {
             println!("No path found!");
