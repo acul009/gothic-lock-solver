@@ -7,6 +7,18 @@ use crate::lock::{
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct LockState(u32);
 
+// needs to be one more than slice positions because of the move_without_linked implementation
+const POWERS: [u32; SLICE_POSITIONS as usize + 1] = [
+    (SLICE_POSITIONS as u32).pow(0),
+    (SLICE_POSITIONS as u32).pow(1),
+    (SLICE_POSITIONS as u32).pow(2),
+    (SLICE_POSITIONS as u32).pow(3),
+    (SLICE_POSITIONS as u32).pow(4),
+    (SLICE_POSITIONS as u32).pow(5),
+    (SLICE_POSITIONS as u32).pow(6),
+    (SLICE_POSITIONS as u32).pow(7),
+];
+
 impl LockState {
     fn new(lock: &Lock) -> Self {
         let mut mult = 1;
@@ -20,11 +32,9 @@ impl LockState {
     }
 
     fn solved(slices: usize) -> Self {
-        let mut mult: u32 = 1;
         let mut num: u32 = 0;
-        for _ in 0..slices {
-            num += SLICE_MIDDLE as u32 * mult;
-            mult *= SLICE_POSITIONS as u32;
+        for index in 0..slices {
+            num += SLICE_MIDDLE as u32 * POWERS[index];
         }
         LockState(num)
     }
@@ -56,8 +66,8 @@ impl LockState {
     }
 
     fn move_without_linked(&mut self, m: &Move) -> Result<(), ()> {
-        let divider = (SLICE_POSITIONS as u32).pow(m.slice as u32);
-        let remainder = self.0 % (divider * SLICE_POSITIONS as u32);
+        let divider = POWERS[m.slice];
+        let remainder = self.0 % POWERS[m.slice + 1];
         let slice = remainder / divider;
         match m.direction {
             Direction::Left => {
