@@ -66,8 +66,8 @@ impl LockState {
     }
 
     fn move_without_linked(&mut self, m: &Move) -> Result<(), ()> {
-        let divider = POWERS[m.slice];
-        let remainder = self.0 % POWERS[m.slice + 1];
+        let divider = POWERS[m.slice as usize];
+        let remainder = self.0 % POWERS[m.slice as usize + 1];
         let slice = remainder / divider;
         match m.direction {
             Direction::Left => {
@@ -127,7 +127,7 @@ impl Solver {
         queue.push_back(initial_state);
 
         let mut moves = Vec::new();
-        for slice in 0..self.lock.size() {
+        for slice in 0..(self.lock.links.size()) {
             moves.push(Move {
                 direction: Direction::Left,
                 slice,

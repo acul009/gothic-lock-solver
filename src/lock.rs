@@ -9,9 +9,9 @@ pub struct Lock {
 }
 
 impl Lock {
-    pub fn new(slice_count: usize) -> Lock {
+    pub fn new(slice_count: u8) -> Lock {
         Lock {
-            slices: vec![SLICE_MIDDLE; slice_count],
+            slices: vec![SLICE_MIDDLE; slice_count as usize],
             links: Links::new(slice_count),
         }
     }
@@ -41,43 +41,43 @@ impl Slice {
 
 #[derive(Clone)]
 pub struct Links {
-    size: usize,
+    size: u8,
     links: Vec<Link>,
 }
 impl Links {
-    fn new(slice_count: usize) -> Self {
+    fn new(slice_count: u8) -> Self {
         Self {
             size: slice_count,
-            links: vec![Link::None; slice_count * slice_count],
+            links: vec![Link::None; slice_count as usize * slice_count as usize],
         }
     }
 
-    pub fn links_from(&self, index: usize) -> Vec<(usize, Link)> {
+    pub fn links_from(&self, index: u8) -> Vec<(usize, Link)> {
         let start = index * self.size;
-        self.links[start..start + self.size]
+        self.links[start as usize..start as usize + self.size as usize]
             .iter()
             .cloned()
             .enumerate()
             .collect()
     }
 
-    pub fn links_to(&self, index: usize) -> Vec<(usize, Link)> {
-        let mut links = Vec::with_capacity(self.size);
+    pub fn links_to(&self, index: u8) -> Vec<(usize, Link)> {
+        let mut links = Vec::with_capacity(self.size as usize);
         for i in 0..self.size {
-            links.push(self.links[i * self.size + index]);
+            links.push(self.links[i as usize * self.size as usize + index as usize]);
         }
         links.into_iter().enumerate().collect()
     }
 
-    pub fn link(&self, from: usize, to: usize) -> Link {
-        self.links[from * self.size + to]
+    pub fn link(&self, from: u8, to: u8) -> Link {
+        self.links[from as usize * self.size as usize + to as usize]
     }
 
-    pub fn cycle_link(&mut self, from: usize, to: usize) {
-        self.links[from * self.size + to].cycle();
+    pub fn cycle_link(&mut self, from: u8, to: u8) {
+        self.links[from as usize * self.size as usize + to as usize].cycle();
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> u8 {
         self.size
     }
 }
@@ -137,7 +137,7 @@ impl Direction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Move {
-    pub slice: usize,
+    pub slice: u8,
     pub direction: Direction,
 }
 

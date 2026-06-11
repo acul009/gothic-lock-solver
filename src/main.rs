@@ -25,7 +25,7 @@ pub enum Message {
     LockSizeChanged(u8),
     CreateLock,
     SetStart(usize, u8),
-    CycleLink(usize, usize),
+    CycleLink(u8, u8),
     Solve,
 }
 
@@ -46,7 +46,7 @@ impl State {
                 Task::none()
             }
             Message::CreateLock => {
-                self.lock = Some(lock::Lock::new(self.new_lock_size as usize));
+                self.lock = Some(lock::Lock::new(self.new_lock_size));
                 Task::none()
             }
             Message::SetStart(index, start) => {
@@ -124,18 +124,18 @@ impl State {
                                         } else {
                                             text!("{}", index)
                                         },
-                                        move |row: (usize, Vec<String>)| {
+                                        move |row: (u8, Vec<String>)| {
                                             if index == 0 {
                                                 Element::from(text!("{}", row.0 + 1))
                                             } else {
-                                                if row.0 == index - 1 {
+                                                if row.0 == (index - 1) as u8 {
                                                     return Element::from(space());
                                                 } else {
                                                     Element::from(
                                                         button(text!("{}", &row.1[index - 1]))
                                                             .on_press(Message::CycleLink(
                                                                 row.0,
-                                                                index - 1,
+                                                                (index - 1) as u8,
                                                             )),
                                                     )
                                                 }
@@ -143,7 +143,7 @@ impl State {
                                         },
                                     )
                                 }),
-                                (0..lock.size()).map(|index| {
+                                (0..lock.links.size()).map(|index| {
                                     let cols = lock
                                         .links
                                         .links_from(index)
