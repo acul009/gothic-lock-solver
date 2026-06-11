@@ -6,7 +6,7 @@ use crate::lock::{
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct LockState {
-    num: usize,
+    num: u32,
     slices: usize,
 }
 
@@ -15,8 +15,8 @@ impl LockState {
         let mut mult = 1;
         let mut num = 0;
         for slice in &lock.slices {
-            num += (*slice as usize) * mult;
-            mult *= SLICE_POSITIONS as usize;
+            num += (*slice as u32) * mult;
+            mult *= SLICE_POSITIONS as u32;
         }
 
         LockState {
@@ -26,16 +26,16 @@ impl LockState {
     }
 
     fn solved(slices: usize) -> Self {
-        let mut mult: usize = 1;
-        let mut num: usize = 0;
+        let mut mult: u32 = 1;
+        let mut num: u32 = 0;
         for _ in 0..slices {
-            num += SLICE_MIDDLE as usize * mult;
-            mult *= SLICE_POSITIONS as usize;
+            num += SLICE_MIDDLE as u32 * mult;
+            mult *= SLICE_POSITIONS as u32;
         }
         LockState { num, slices }
     }
 
-    fn to_number(&self) -> usize {
+    fn to_number(&self) -> u32 {
         self.num
     }
 
@@ -66,8 +66,8 @@ impl LockState {
     }
 
     fn move_without_linked(&mut self, m: &Move) -> Result<(), ()> {
-        let divider = (SLICE_POSITIONS as usize).pow(m.slice as u32);
-        let remainder = self.num % (divider * SLICE_POSITIONS as usize);
+        let divider = (SLICE_POSITIONS as u32).pow(m.slice as u32);
+        let remainder = self.num % (divider * SLICE_POSITIONS as u32);
         let slice = remainder / divider;
         match m.direction {
             Direction::Left => {
@@ -77,7 +77,7 @@ impl LockState {
                 self.num -= divider;
             }
             Direction::Right => {
-                if slice >= SLICE_POSITIONS as usize - 1 {
+                if slice >= SLICE_POSITIONS as u32 - 1 {
                     return Err(());
                 }
                 self.num += divider;
@@ -89,7 +89,7 @@ impl LockState {
 
 #[derive(Clone)]
 pub struct Step {
-    previous: usize,
+    previous: u32,
     m: Move,
 }
 
@@ -106,16 +106,16 @@ impl Solver {
         let start = std::time::Instant::now();
         let initial_state = LockState::new(&self.lock);
 
-        let solved = LockState::solved(self.lock.size()).to_number();
+        let solved = LockState::solved(self.lock.size()).to_number() as usize;
 
-        if initial_state.to_number() == solved {
+        if initial_state.to_number() as usize == solved {
             return Solution {
                 moves: Ok(Vec::new()),
             };
         }
 
         let mut state_map = vec![None::<Step>; initial_state.possible_states()];
-        state_map[initial_state.to_number()] = Some(Step {
+        state_map[initial_state.to_number() as usize] = Some(Step {
             previous: initial_state.to_number(),
             m: Move {
                 direction: Direction::Left,
@@ -144,7 +144,7 @@ impl Solver {
             let old_state_num = state.to_number();
             for m in &moves {
                 if let Some(new_state) = state.apply_move(m, &self.lock.links) {
-                    let new_state_num = new_state.to_number();
+                    let new_state_num = new_state.to_number() as usize;
                     if state_map[new_state_num].is_some() {
                         // println!("Already found state {}", new_state_num);
                         continue;
@@ -182,11 +182,11 @@ impl Solver {
         let mut state = solved;
         while let Some(step) = &state_map[state] {
             // println!("previous of {} is {}", state, step.previous);
-            if state == step.previous {
+            if state == step.previous as usize {
                 break;
             }
             moves.push(step.m);
-            state = step.previous;
+            state = step.previous as usize;
         }
         moves.reverse();
 
