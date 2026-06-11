@@ -66,8 +66,8 @@ impl LockState {
     }
 
     fn move_without_linked(&mut self, m: &Move) -> Result<(), ()> {
-        let remainder = self.num % (SLICE_POSITIONS as usize).pow(m.slice as u32 + 1);
         let divider = (SLICE_POSITIONS as usize).pow(m.slice as u32);
+        let remainder = self.num % (divider * SLICE_POSITIONS as usize);
         let slice = remainder / divider;
         match m.direction {
             Direction::Left => {
@@ -77,7 +77,7 @@ impl LockState {
                 self.num -= divider;
             }
             Direction::Right => {
-                if slice >= super::SLICE_POSITIONS as usize - 1 {
+                if slice >= SLICE_POSITIONS as usize - 1 {
                     return Err(());
                 }
                 self.num += divider;
@@ -167,9 +167,8 @@ impl Solver {
 
         let time = std::time::Instant::now().duration_since(start);
         println!(
-            "Done! Checked {} combinations in {}ms.",
-            combinations_found,
-            time.as_millis()
+            "Done! Checked {} combinations in {:?}.",
+            combinations_found, time
         );
 
         if state_map[solved].is_none() {
