@@ -41,7 +41,17 @@ impl LockState {
         let mut num: u32 = 0;
         let mut index = 0;
         while index < MAX_SLICES as usize {
-            num += (0b100 as u32) << (index * SLICE_BIT_WIDTH);
+            num += (0b001 as u32) << (index * SLICE_BIT_WIDTH);
+            index += 1;
+        }
+        num
+    };
+
+    const CHECK_UNDERFLOW_MASK: u32 = {
+        let mut num: u32 = 0;
+        let mut index = 0;
+        while index <= MAX_SLICES as usize {
+            num += (0b001 as u32) << (index * SLICE_BIT_WIDTH);
             index += 1;
         }
         num
@@ -49,40 +59,63 @@ impl LockState {
 
     fn apply_move(&self, m: &PrecomputedMove) -> Option<Self> {
         let raw = self.0;
+        let new = raw.wrapping_add(m.delta);
 
         // println!("current: {:b}", raw);
         // println!("upper_bound_check: {:b}", m.upper_bound_check);
         // println!("lower_bound_check: {:b}", m.lower_bound_check);
         // println!("delta: {:b}", m.delta);
 
+        // Newer lower bound logic
+        let changed_bits = raw ^ new;
+        let changed_slices = changed_bits & Self::CHECK_UNDERFLOW_MASK;
+        if changed_slices != m.slice_moves {
+            return None;
+        }
+
         // Check upper bound
         let highest_bit = raw & m.upper_bound_check;
         let middle_bit = (raw << 1) & m.upper_bound_check;
         if highest_bit & middle_bit > 0 {
+            panic!("higher bound hit");
             return None;
         }
 
         // check lower bound
-        let highest_bit = raw & m.lower_bound_check;
-        let middle_bit = (raw << 1) & m.lower_bound_check;
-        let lowest_bit = (raw << 2) & m.lower_bound_check;
-        let non_zero_flags = highest_bit | middle_bit | lowest_bit;
-        let filler = Self::CHECK_ALL_BOUNDS_MASK ^ m.lower_bound_check;
-        let compare_to = non_zero_flags | filler;
-        // println!("highest_bit: {:b}", highest_bit);
-        // println!("middle_bit: {:b}", middle_bit);
-        // println!("lowest_bit: {:b}", lowest_bit);
-        // println!("non_zero_flags: {:b}", non_zero_flags);
-        // println!("filler: {:b}", filler);
-        // println!("compare_to:            {:b}", compare_to);
-        // println!("CHECK_ALL_BOUNDS_MASK: {:b}", Self::CHECK_ALL_BOUNDS_MASK);
-        if compare_to != Self::CHECK_ALL_BOUNDS_MASK {
-            return None;
-        }
+        // let highest_bit = (raw >> 2) & m.lower_bound_check;
+        // let middle_bit = (raw >> 1) & m.lower_bound_check;
+        // let lowest_bit = (raw) & m.lower_bound_check;
+        // let non_zero_flags = highest_bit | middle_bit | lowest_bit;
+        // let filler = Self::CHECK_ALL_BOUNDS_MASK ^ m.lower_bound_check;
+        // let compare_to = non_zero_flags | filler;
+        // // println!("highest_bit: {:b}", highest_bit);
+        // // println!("middle_bit: {:b}", middle_bit);
+        // // println!("lowest_bit: {:b}", lowest_bit);
+        // // println!("non_zero_flags: {:b}", non_zero_flags);
+        // // println!("filler: {:b}", filler);
+        // // println!("compare_to:            {:b}", compare_to);
+        // // println!("CHECK_ALL_BOUNDS_MASK: {:b}", Self::CHECK_ALL_BOUNDS_MASK);
+        // if compare_to != Self::CHECK_ALL_BOUNDS_MASK {
+        //     println!("raw:            {:b}", raw);
+        //     println!("delta:          {:b}", m.delta);
+        //     println!("new:            {:b}", new);
+        //     println!("highest_bit:    {:b}", highest_bit);
+        //     println!("middle_bit:     {:b}", middle_bit);
+        //     println!("lowest_bit:     {:b}", lowest_bit);
+        //     println!("non_zero_flags: {:b}", non_zero_flags);
+        //     println!("filler:         {:b}", filler);
+        //     println!("compare_to:     {:b}", compare_to);
+        //     println!("BOUNDS_MASK:    {:b}", Self::CHECK_ALL_BOUNDS_MASK);
+        //     println!("slice_moves:    {:b}", m.slice_moves);
+        //     println!("lower_bound_check: {:b}", m.lower_bound_check);
+        //     println!("changed_bits:   {:b}", changed_bits);
+        //     println!("changed_slices: {:b}", changed_slices);
+        //     println!("slice_moves:    {:b}", m.slice_moves);
+        //     panic!("lower bound still hit");
+        //     return None;
+        // }
 
-        let new = Self(raw.wrapping_add(m.delta));
-
-        Some(new)
+        Some(Self(new))
     }
 }
 
@@ -124,6 +157,7 @@ impl MoveMap {
             println!("{:?}", m);
 
             let mut delta = 0;
+            let mut slice_moves = 0;
             let mut lower_bound_check = 0;
             let mut upper_bound_check = 0;
 
@@ -131,10 +165,12 @@ impl MoveMap {
                 let operation = match link.apply(m.direction) {
                     None => continue,
                     Some(Direction::Left) => {
-                        lower_bound_check |= 0b100 << (target * SLICE_BIT_WIDTH);
+                        lower_bound_check |= 0b001 << (target * SLICE_BIT_WIDTH);
+                        slice_moves |= 0b001 << (target * SLICE_BIT_WIDTH);
                         0u32.wrapping_sub(1)
                     }
                     Some(Direction::Right) => {
+                        slice_moves |= 0b001 << (target * SLICE_BIT_WIDTH);
                         upper_bound_check |= 0b100 << (target * SLICE_BIT_WIDTH);
                         1
                     }
@@ -145,6 +181,7 @@ impl MoveMap {
             move_map[packed_move.0 as usize] = PrecomputedMove {
                 m: packed_move,
                 delta,
+                slice_moves,
                 lower_bound_check,
                 upper_bound_check,
             }
@@ -161,6 +198,7 @@ impl MoveMap {
 struct PrecomputedMove {
     m: PackedMove,
     delta: u32,
+    slice_moves: u32,
     // used to check for the left (lower) bound for each slice
     lower_bound_check: u32,
     // used to check for the right (upper) bound for each slice
@@ -177,7 +215,6 @@ impl Solver {
     }
 
     pub(super) fn solve(self) -> Solution {
-        let start = std::time::Instant::now();
         println!("Lock slices: {:?}", self.lock.slices);
         let initial_state = LockState::new(&self.lock);
         println!("Initial state: {:b}", initial_state.0);
@@ -200,6 +237,7 @@ impl Solver {
         let move_map = MoveMap::new(&self.lock.links);
 
         println!("Starting state search");
+        let start = std::time::Instant::now();
 
         let mut combinations_found = 0;
 
