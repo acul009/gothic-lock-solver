@@ -6,7 +6,7 @@ use iced::{
     widget::{button, column, container, row, scrollable, slider, space, table, text},
 };
 
-use crate::lock::{Link, Move, Solution};
+use crate::lock::{Link, MAX_SLICES, Move, Solution};
 
 pub mod lock;
 
@@ -78,7 +78,7 @@ impl State {
                         "Lock size",
                         row![
                             text!("{}", self.new_lock_size),
-                            slider(4..=7, self.new_lock_size, Message::LockSizeChanged)
+                            slider(4..=MAX_SLICES, self.new_lock_size, Message::LockSizeChanged)
                         ]
                         .spacing(5),
                         button("Create Lock").on_press(Message::CreateLock)

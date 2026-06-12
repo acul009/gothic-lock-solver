@@ -27,6 +27,7 @@ impl Lock {
 
 pub const SLICE_POSITIONS: u8 = 7;
 pub const SLICE_MIDDLE: u8 = SLICE_POSITIONS / 2;
+pub const MAX_SLICES: u8 = 7;
 
 #[derive(Clone)]
 pub struct Slice {
@@ -46,9 +47,13 @@ pub struct Links {
 }
 impl Links {
     fn new(slice_count: u8) -> Self {
+        let mut links = vec![Link::None; slice_count as usize * slice_count as usize];
+        for i in 0..slice_count {
+            links[i as usize * slice_count as usize + i as usize] = Link::Same;
+        }
         Self {
             size: slice_count,
-            links: vec![Link::None; slice_count as usize * slice_count as usize],
+            links,
         }
     }
 
