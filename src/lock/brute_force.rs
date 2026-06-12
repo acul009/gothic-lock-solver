@@ -1,26 +1,9 @@
 use std::{collections::VecDeque, u32};
 
-use iced::widget::operation;
-
-use crate::lock::{
-    Direction, Link, Links, Lock, MAX_SLICES, Move, SLICE_MIDDLE, SLICE_POSITIONS, Solution,
-    SolveError,
-};
+use crate::lock::{Direction, Links, Lock, MAX_SLICES, Move, SLICE_MIDDLE, Solution, SolveError};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 struct LockState(u32);
-
-// needs to be one more than slice positions because of the move_without_linked implementation
-const POWERS: [u32; SLICE_POSITIONS as usize + 1] = [
-    (SLICE_POSITIONS as u32).pow(0),
-    (SLICE_POSITIONS as u32).pow(1),
-    (SLICE_POSITIONS as u32).pow(2),
-    (SLICE_POSITIONS as u32).pow(3),
-    (SLICE_POSITIONS as u32).pow(4),
-    (SLICE_POSITIONS as u32).pow(5),
-    (SLICE_POSITIONS as u32).pow(6),
-    (SLICE_POSITIONS as u32).pow(7),
-];
 
 const SLICE_BIT_WIDTH: usize = 3;
 
@@ -45,8 +28,6 @@ impl LockState {
         LockState(num)
     };
 
-    const EMPTY: Self = LockState(1 >> 31);
-
     fn possible_states(slices: usize) -> usize {
         1 << (slices * SLICE_BIT_WIDTH + 1)
     }
@@ -54,23 +35,6 @@ impl LockState {
     fn index(&self, slices: usize) -> usize {
         let mask = (1u32 << slices * SLICE_BIT_WIDTH) - 1;
         (self.0 & mask) as usize
-    }
-
-    const HAS_MOVE_BITMASK: u32 = 1 << 30;
-    const MOVE_BITMASK: u32 = 0b0011_1100_0000_0000_0000_0000_0000_0000;
-    const MOVE_REVERSE_BITMASK: u32 = Self::MOVE_BITMASK ^ u32::MAX;
-    fn set_last_move(&mut self, m: &PackedMove) {
-        let move_shifted = (m.0 as u32) << (31 - PackedMove::BIT_SIZE);
-        let cleared = self.0 & Self::MOVE_REVERSE_BITMASK;
-        self.0 = cleared | move_shifted | Self::HAS_MOVE_BITMASK;
-    }
-
-    fn get_last_move(&self) -> Option<PackedMove> {
-        if self.0 & Self::HAS_MOVE_BITMASK == 0 {
-            return None;
-        }
-        let m = (self.0 & Self::MOVE_BITMASK) >> (31 - PackedMove::BIT_SIZE);
-        Some(PackedMove(m as u8))
     }
 
     const CHECK_ALL_BOUNDS_MASK: u32 = {
@@ -116,27 +80,18 @@ impl LockState {
             return None;
         }
 
-        let mut new = Self(raw.wrapping_add(m.delta));
-        new.set_last_move(&m.m);
+        let new = Self(raw.wrapping_add(m.delta));
 
         Some(new)
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct PackedMove(u8);
 
 impl PackedMove {
-    const BIT_SIZE: usize = 4;
-
-    fn from_move(m: &Move) -> Self {
-        match m.direction {
-            // Set lowest bit to 0 for left or 1 for right
-            // This directions allows for densely packing all moves into the numbers 0 - 13
-            Direction::Left => Self((m.slice << 1) & 0b0000_1110),
-            Direction::Right => Self((m.slice << 1) | 0b0000_0001),
-        }
-    }
+    const EMPTY: Self = Self(0b1000_0000);
+    const START: Self = Self(0b0100_0000);
 
     fn to_move(&self) -> Move {
         Move {
@@ -236,8 +191,8 @@ impl Solver {
             };
         }
 
-        let mut state_map = vec![128u8; LockState::possible_states(self.lock.size())];
-        state_map[initial_state.index(slices)] = 64;
+        let mut state_map = vec![PackedMove::EMPTY; LockState::possible_states(self.lock.size())];
+        state_map[initial_state.index(slices)] = PackedMove::START;
 
         let mut queue = VecDeque::new();
         queue.push_back(initial_state);
@@ -252,13 +207,13 @@ impl Solver {
             for m in move_map.0.iter().take(slices * 2) {
                 if let Some(new_state) = state.apply_move(m) {
                     let index = new_state.index(slices);
-                    if state_map[index] != 128 {
+                    if state_map[index] != PackedMove::EMPTY {
                         // println!("Already found state {}", new_state_num);
                         continue;
                     }
                     combinations_found += 1;
 
-                    state_map[index] = m.m.0;
+                    state_map[index] = m.m;
 
                     if index == solved_index {
                         break 'outer;
@@ -275,7 +230,7 @@ impl Solver {
             combinations_found, time
         );
 
-        if state_map[solved_index] == 128 {
+        if state_map[solved_index] == PackedMove::EMPTY {
             println!("No path found!");
             return Solution {
                 moves: Err(SolveError::Impossible),
@@ -285,11 +240,10 @@ impl Solver {
         let mut moves = Vec::new();
         let mut state = LockState::SOLVED;
         loop {
-            let raw = state_map[state.index(slices)];
-            if raw == 64 {
+            let m = state_map[state.index(slices)];
+            if m == PackedMove::START {
                 break;
             }
-            let m = PackedMove(raw);
             moves.push(m.to_move());
             state = state.apply_move(move_map.load(&m.reverse())).unwrap();
         }
