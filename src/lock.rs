@@ -1,8 +1,10 @@
 use std::fmt::Display;
 
+use serde::{Deserialize, Serialize};
+
 mod brute_force;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Lock {
     pub slices: Vec<u8>,
     pub links: Links,
@@ -40,7 +42,7 @@ impl Slice {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Links {
     size: u8,
     links: Vec<Link>,
@@ -87,7 +89,7 @@ impl Links {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Link {
     None,
     Same,

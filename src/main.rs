@@ -2,7 +2,7 @@
 use iced::{
     Color, Element,
     Length::Fill,
-    Task,
+    Task, clipboard,
     widget::{button, column, container, row, scrollable, slider, space, table, text},
 };
 
@@ -27,6 +27,9 @@ pub enum Message {
     SetStart(usize, u8),
     CycleLink(u8, u8),
     Solve,
+    Import,
+    Load(Option<String>),
+    Export,
 }
 
 impl State {
@@ -67,6 +70,23 @@ impl State {
                 }
                 Task::none()
             }
+            Message::Import => clipboard::read().map(Message::Load),
+            Message::Load(data) => {
+                if let Some(data) = data {
+                    if let Ok(lock) = serde_json::from_str(data.as_str()) {
+                        self.lock = Some(lock);
+                    }
+                }
+                Task::none()
+            }
+            Message::Export => {
+                if let Some(lock) = &self.lock {
+                    let data = serde_json::to_string(lock).unwrap();
+                    clipboard::write(data)
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
@@ -81,7 +101,12 @@ impl State {
                             slider(4..=MAX_SLICES, self.new_lock_size, Message::LockSizeChanged)
                         ]
                         .spacing(5),
-                        button("Create Lock").on_press(Message::CreateLock)
+                        row![
+                            button("Create Lock").on_press(Message::CreateLock),
+                            button("Import").on_press(Message::Import),
+                            button("Export").on_press(Message::Export)
+                        ]
+                        .spacing(10)
                     ]
                     .spacing(10)
                 )

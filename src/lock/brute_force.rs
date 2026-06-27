@@ -73,11 +73,19 @@ impl LockState {
             return None;
         }
 
+        // let second_new = new.wrapping_add(Self::CHECK_ALL_BOUNDS_MASK);
+        // let changed_bits = new ^ second_new;
+        // let changed_slices = changed_bits & Self::CHECK_UNDERFLOW_MASK;
+        // if changed_slices != m.slice_moves {
+        //     return None;
+        // }
+
         // Check upper bound
-        let highest_bit = raw & m.upper_bound_check;
-        let middle_bit = (raw << 1) & m.upper_bound_check;
-        if highest_bit & middle_bit > 0 {
-            panic!("higher bound hit");
+        let highest_bit = new & m.upper_bound_check;
+        let middle_bit = (new << 1) & m.upper_bound_check;
+        let lowest_bit = (new << 2) & m.upper_bound_check;
+        if highest_bit & middle_bit & lowest_bit > 0 {
+            // panic!("higher bound hit");
             return None;
         }
 
