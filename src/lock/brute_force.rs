@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, u32};
+use std::{collections::VecDeque, sync::mpsc::Iter, u32};
 
 use crate::lock::{Direction, Links, Lock, MAX_SLICES, Move, SLICE_MIDDLE, Solution, SolveError};
 
@@ -57,14 +57,9 @@ impl LockState {
         num
     };
 
-    fn apply_move(&self, m: &PrecomputedMove) -> Option<Self> {
+    fn apply_move(&self, m: PrecomputedMove) -> Option<Self> {
         let raw = self.0;
         let new = raw.wrapping_add(m.delta);
-
-        // println!("current: {:b}", raw);
-        // println!("upper_bound_check: {:b}", m.upper_bound_check);
-        // println!("lower_bound_check: {:b}", m.lower_bound_check);
-        // println!("delta: {:b}", m.delta);
 
         // Newer lower bound logic
         let changed_bits = raw ^ new;
@@ -73,55 +68,15 @@ impl LockState {
             return None;
         }
 
-        // let second_new = new.wrapping_add(Self::CHECK_ALL_BOUNDS_MASK);
-        // let changed_bits = new ^ second_new;
-        // let changed_slices = changed_bits & Self::CHECK_UNDERFLOW_MASK;
-        // if changed_slices != m.slice_moves {
-        //     return None;
-        // }
-
-        // Check upper bound
-        let highest_bit = new & m.upper_bound_check;
-        let middle_bit = (new << 1) & m.upper_bound_check;
-        let lowest_bit = (new << 2) & m.upper_bound_check;
-        if highest_bit & middle_bit & lowest_bit > 0 {
-            // panic!("higher bound hit");
+        // 7 is our max, so there should be know slice overflows when we move all of them up by one.
+        // If any of the slices are already at 8, they will overflow and cause interference with the other slices.
+        let all_one_up = new + Self::CHECK_ALL_BOUNDS_MASK;
+        let changed = new ^ all_one_up;
+        let changed_slices = changed & Self::CHECK_UNDERFLOW_MASK;
+        let new_upper = changed_slices != Self::CHECK_ALL_BOUNDS_MASK;
+        if new_upper {
             return None;
         }
-
-        // check lower bound
-        // let highest_bit = (raw >> 2) & m.lower_bound_check;
-        // let middle_bit = (raw >> 1) & m.lower_bound_check;
-        // let lowest_bit = (raw) & m.lower_bound_check;
-        // let non_zero_flags = highest_bit | middle_bit | lowest_bit;
-        // let filler = Self::CHECK_ALL_BOUNDS_MASK ^ m.lower_bound_check;
-        // let compare_to = non_zero_flags | filler;
-        // // println!("highest_bit: {:b}", highest_bit);
-        // // println!("middle_bit: {:b}", middle_bit);
-        // // println!("lowest_bit: {:b}", lowest_bit);
-        // // println!("non_zero_flags: {:b}", non_zero_flags);
-        // // println!("filler: {:b}", filler);
-        // // println!("compare_to:            {:b}", compare_to);
-        // // println!("CHECK_ALL_BOUNDS_MASK: {:b}", Self::CHECK_ALL_BOUNDS_MASK);
-        // if compare_to != Self::CHECK_ALL_BOUNDS_MASK {
-        //     println!("raw:            {:b}", raw);
-        //     println!("delta:          {:b}", m.delta);
-        //     println!("new:            {:b}", new);
-        //     println!("highest_bit:    {:b}", highest_bit);
-        //     println!("middle_bit:     {:b}", middle_bit);
-        //     println!("lowest_bit:     {:b}", lowest_bit);
-        //     println!("non_zero_flags: {:b}", non_zero_flags);
-        //     println!("filler:         {:b}", filler);
-        //     println!("compare_to:     {:b}", compare_to);
-        //     println!("BOUNDS_MASK:    {:b}", Self::CHECK_ALL_BOUNDS_MASK);
-        //     println!("slice_moves:    {:b}", m.slice_moves);
-        //     println!("lower_bound_check: {:b}", m.lower_bound_check);
-        //     println!("changed_bits:   {:b}", changed_bits);
-        //     println!("changed_slices: {:b}", changed_slices);
-        //     println!("slice_moves:    {:b}", m.slice_moves);
-        //     panic!("lower bound still hit");
-        //     return None;
-        // }
 
         Some(Self(new))
     }
@@ -134,7 +89,7 @@ impl PackedMove {
     const EMPTY: Self = Self(0b1000_0000);
     const START: Self = Self(0b0100_0000);
 
-    fn to_move(&self) -> Move {
+    fn to_move(self) -> Move {
         Move {
             slice: (self.0 & 0b0000_1110) >> 1,
             direction: match self.0 & 0b0000_0001 {
@@ -148,8 +103,12 @@ impl PackedMove {
         (0..(slices * 2)).map(|i| Self(i))
     }
 
-    fn reverse(&self) -> Self {
+    fn reverse(self) -> Self {
         Self(self.0 ^ 0b0001)
+    }
+
+    fn same_slice(self, other: Self) -> bool {
+        self.0 ^ other.0 <= 1
     }
 }
 
@@ -166,20 +125,16 @@ impl MoveMap {
 
             let mut delta = 0;
             let mut slice_moves = 0;
-            let mut lower_bound_check = 0;
-            let mut upper_bound_check = 0;
 
             for (target, link) in links.links_from(m.slice) {
                 let operation = match link.apply(m.direction) {
                     None => continue,
                     Some(Direction::Left) => {
-                        lower_bound_check |= 0b001 << (target * SLICE_BIT_WIDTH);
                         slice_moves |= 0b001 << (target * SLICE_BIT_WIDTH);
                         0u32.wrapping_sub(1)
                     }
                     Some(Direction::Right) => {
                         slice_moves |= 0b001 << (target * SLICE_BIT_WIDTH);
-                        upper_bound_check |= 0b100 << (target * SLICE_BIT_WIDTH);
                         1
                     }
                 };
@@ -187,30 +142,35 @@ impl MoveMap {
             }
 
             move_map[packed_move.0 as usize] = PrecomputedMove {
-                m: packed_move,
+                // m: packed_move,
                 delta,
                 slice_moves,
-                lower_bound_check,
-                upper_bound_check,
             }
         }
         Self(move_map)
     }
 
-    fn load(&self, m: &PackedMove) -> &PrecomputedMove {
-        &self.0[m.0 as usize]
+    fn load(&self, m: PackedMove) -> PrecomputedMove {
+        self.0[m.0 as usize]
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (PackedMove, PrecomputedMove)> {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (PackedMove(i as u8), *m))
     }
 }
 
 #[derive(Clone, Default, Copy)]
 struct PrecomputedMove {
-    m: PackedMove,
+    // m: PackedMove,
     delta: u32,
     slice_moves: u32,
     // used to check for the left (lower) bound for each slice
-    lower_bound_check: u32,
+    // lower_bound_check: u32,
     // used to check for the right (upper) bound for each slice
-    upper_bound_check: u32,
+    // upper_bound_check: u32,
 }
 
 pub struct Solver {
@@ -250,30 +210,37 @@ impl Solver {
         let mut combinations_found = 0;
 
         'outer: while let Some(state) = queue.pop_front() {
-            for m in move_map.0.iter().take(slices * 2) {
-                match state_map[state.index(slices)] {
-                    PackedMove::EMPTY => (),
-                    PackedMove::START => (),
-                    m => {
-                        let m = &move_map.0[m.0 as usize];
-                        if let Some(new_state) = state.apply_move(m) {
-                            let index = new_state.index(slices);
-                            if state_map[index] != PackedMove::EMPTY {
-                                // println!("Already found state {}", new_state_num);
-                                continue;
-                            }
-                            combinations_found += 1;
-
-                            state_map[index] = m.m;
-
-                            if index == solved_index {
-                                break 'outer;
-                            }
-
-                            queue.push_back(new_state);
+            let priority = match state_map[state.index(slices)] {
+                PackedMove::EMPTY => None,
+                PackedMove::START => None,
+                packed => {
+                    let m = move_map.load(packed);
+                    if let Some(new_state) = state.apply_move(m) {
+                        let index = new_state.index(slices);
+                        if state_map[index] != PackedMove::EMPTY {
+                            // println!("Already found state {}", new_state_num);
+                            continue;
                         }
+                        combinations_found += 1;
+
+                        state_map[index] = packed;
+
+                        if index == solved_index {
+                            break 'outer;
+                        }
+
+                        queue.push_back(new_state);
+                    }
+                    Some(packed)
+                }
+            };
+            for (packed, m) in move_map.iter() {
+                if let Some(priority) = priority {
+                    if packed.same_slice(priority) {
+                        continue;
                     }
                 }
+
                 if let Some(new_state) = state.apply_move(m) {
                     let index = new_state.index(slices);
                     if state_map[index] != PackedMove::EMPTY {
@@ -282,7 +249,7 @@ impl Solver {
                     }
                     combinations_found += 1;
 
-                    state_map[index] = m.m;
+                    state_map[index] = packed;
 
                     if index == solved_index {
                         break 'outer;
@@ -314,7 +281,7 @@ impl Solver {
                 break;
             }
             moves.push(m.to_move());
-            state = state.apply_move(move_map.load(&m.reverse())).unwrap();
+            state = state.apply_move(move_map.load(m.reverse())).unwrap();
         }
         moves.reverse();
 
