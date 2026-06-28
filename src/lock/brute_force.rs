@@ -29,7 +29,7 @@ impl LockState {
     };
 
     fn possible_states(slices: usize) -> usize {
-        1 << (slices * SLICE_BIT_WIDTH + 1)
+        1 << (slices * SLICE_BIT_WIDTH)
     }
 
     fn index(&self, slices: usize) -> usize {
@@ -217,19 +217,17 @@ impl Solver {
                     let m = move_map.load(packed);
                     if let Some(new_state) = state.apply_move(m) {
                         let index = new_state.index(slices);
-                        if state_map[index] != PackedMove::EMPTY {
-                            // println!("Already found state {}", new_state_num);
-                            continue;
+                        if state_map[index] == PackedMove::EMPTY {
+                            combinations_found += 1;
+
+                            state_map[index] = packed;
+
+                            if index == solved_index {
+                                break 'outer;
+                            }
+
+                            queue.push_back(new_state);
                         }
-                        combinations_found += 1;
-
-                        state_map[index] = packed;
-
-                        if index == solved_index {
-                            break 'outer;
-                        }
-
-                        queue.push_back(new_state);
                     }
                     Some(packed)
                 }

@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
 mod brute_force;
 
@@ -89,11 +90,12 @@ impl Links {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[repr(i8)]
 pub enum Link {
-    None,
-    Same,
-    Opposite,
+    None = 0,
+    Same = 1,
+    Opposite = -1,
 }
 
 impl Link {
