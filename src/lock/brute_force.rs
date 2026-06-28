@@ -251,6 +251,29 @@ impl Solver {
 
         'outer: while let Some(state) = queue.pop_front() {
             for m in move_map.0.iter().take(slices * 2) {
+                match state_map[state.index(slices)] {
+                    PackedMove::EMPTY => (),
+                    PackedMove::START => (),
+                    m => {
+                        let m = &move_map.0[m.0 as usize];
+                        if let Some(new_state) = state.apply_move(m) {
+                            let index = new_state.index(slices);
+                            if state_map[index] != PackedMove::EMPTY {
+                                // println!("Already found state {}", new_state_num);
+                                continue;
+                            }
+                            combinations_found += 1;
+
+                            state_map[index] = m.m;
+
+                            if index == solved_index {
+                                break 'outer;
+                            }
+
+                            queue.push_back(new_state);
+                        }
+                    }
+                }
                 if let Some(new_state) = state.apply_move(m) {
                     let index = new_state.index(slices);
                     if state_map[index] != PackedMove::EMPTY {
