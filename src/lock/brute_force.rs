@@ -123,7 +123,7 @@ impl MoveMap {
             let m = packed_move.to_move();
             println!("{:?}", m);
 
-            let mut delta = 0;
+            let mut delta: u32 = 0;
             let mut slice_moves = 0;
 
             for (target, link) in links.links_from(m.slice) {
@@ -138,7 +138,7 @@ impl MoveMap {
                         1
                     }
                 };
-                delta += operation << (target * SLICE_BIT_WIDTH);
+                delta = delta.wrapping_add(operation << (target * SLICE_BIT_WIDTH));
             }
 
             move_map[packed_move.0 as usize] = PrecomputedMove {
